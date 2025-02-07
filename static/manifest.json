@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "version": "1.0",
+    "name": "hackReolen global",
+    "description": "hacker eReolen globalt",
+    "icons": {
+        "128": "icons/128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.read.overdrive.com/*"
+            ],
+            "js": [
+                "content.bundle.js"
+            ]
+        }
+    ]
+}
