@@ -2,11 +2,10 @@
   "name": "hackreolglobal",
   "version": "1.0.0",
   "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "webpack --mode development",
+    "watch": "webpack --watch",
+    "build:prod": "webpack --mode production"
   },
   "keywords": [],
   "author": "",
