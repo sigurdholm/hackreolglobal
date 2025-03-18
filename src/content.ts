@@ -1,7 +1,9 @@
 
 (async () => {
     const currentUrl = window.location.href;
-    const response = await fetch(currentUrl);
+    const baseUrl = new URL(currentUrl).origin;
+
+    const response = await fetch(baseUrl);
     const text = await response.text();
 
     const eDataRegex = /eData=\[("[^"]*"(?:,\s*"[^"]*")*)\]/;
@@ -26,6 +28,36 @@
     const decoder = new Base64Decoder(keyShiftedData);
     const decodedData = decoder.decode();
     const json = JSON.parse(decodedData);
+    console.log(json)
+    const spine = json.b.spine;
+    const cmptParams = json.b["-odread-cmpt-params"];
+
+    let blobs: Blob[] = []
+
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+
+    for (let index = 0; index < spine.length; index++) {
+        const path = spine[index].path;
+        const url_2 = `${baseUrl}/${path}?${cmptParams[index]}`;
+        const iframe = document.createElement('iframe');
+        iframe.src = url_2;
+        iframe.onload = () => {
+            // Access the iframe's document
+            let content = iframe.contentDocument?.documentElement.innerHTML;
+            if (!content) {
+                console.log(`Failed to read ${path}`);
+                return;
+            }
+            console.log(content)
+            // blobs.push(new Blob([content], { '' }))
+            
+        }
+        div.appendChild(iframe)
+
+    }
+
+    // const response_2 = await fetch(currentUrl);
 })();
 
 function shiftTextByKey(text: string, key: string) {
