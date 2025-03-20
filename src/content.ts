@@ -1,20 +1,20 @@
+import JSZip from "jszip";
 
 (async () => {
     const currentUrl = window.location.href;
     const baseUrl = new URL(currentUrl).origin;
 
-    const response = await fetch(baseUrl);
-    const text = await response.text();
+    const metaData = await fetchContent(baseUrl);
 
     const eDataRegex = /eData=\[("[^"]*"(?:,\s*"[^"]*")*)\]/;
-    const matches = text.match(eDataRegex)
+    const eDataMatches = metaData.match(eDataRegex)
 
-    if (!matches) {
+    if (!eDataMatches) {
         console.log('eData not found.');
         return
     }
 
-    const eData = JSON.parse(`[${matches[1]}]`);
+    const eData = JSON.parse(`[${eDataMatches[1]}]`);
 
     const key = currentUrl
         .split(".")[0]
@@ -28,37 +28,154 @@
     const decoder = new Base64Decoder(keyShiftedData);
     const decodedData = decoder.decode();
     const json = JSON.parse(decodedData);
-    console.log(json)
-    const spine = json.b.spine;
+    const spine = json.b.spine as any[];
     const cmptParams = json.b["-odread-cmpt-params"];
 
-    let blobs: Blob[] = []
+    const zip = new JSZip()
 
-    const div = document.createElement('div');
-    document.body.appendChild(div);
+    const mainContainer = document.createElement('div');
+    document.body.appendChild(mainContainer);
 
-    for (let index = 0; index < spine.length; index++) {
-        const path = spine[index].path;
-        const url_2 = `${baseUrl}/${path}?${cmptParams[index]}`;
-        const iframe = document.createElement('iframe');
-        iframe.src = url_2;
-        iframe.onload = () => {
-            // Access the iframe's document
-            let content = iframe.contentDocument?.documentElement.innerHTML;
-            if (!content) {
-                console.log(`Failed to read ${path}`);
-                return;
+    // Get main content as [title, content] (needs to be inserted as iframes into main container and load)
+    const mainContent = await Promise.all(spine.map((entry, index) =>
+        loadIFrameContent(mainContainer, baseUrl, entry.path, cmptParams[index])
+    ))
+
+    const domParser = new DOMParser()
+
+    const imagePaths = new Set<string>()
+    const styleSheetPaths = new Set<string>()
+
+    mainContent.forEach(([, content]) => {
+        const contentDoc = domParser.parseFromString(content, 'text/html')
+
+        // Add all image paths to set
+        contentDoc.querySelectorAll('img').forEach(img => {
+            const src = img.getAttribute('src')
+            if (src !== null) {
+                imagePaths.add(src)
             }
-            console.log(content)
-            // blobs.push(new Blob([content], { '' }))
-            
-        }
-        div.appendChild(iframe)
+        })
 
+        // Add all style sheet paths to set
+        contentDoc.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+            const href = link.getAttribute('href')
+            if (href !== null) {
+                styleSheetPaths.add(href)
+            }
+        })
+    })
+
+
+
+    // Get all CSS resource paths (such as fonts)
+
+
+    const resourcePaths = new Set(
+        mainContent.flatMap(([, content]) => {
+            const doc = domParser.parseFromString(content, 'text/html')
+
+            const imagePaths = Array.from(doc.querySelectorAll('img'))
+                .map(img => img.getAttribute('src'))
+                .filter((src): src is string => src !== null)
+
+            const styleSheetPaths = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'))
+                .map(link => link.getAttribute('href'))
+                .filter((href): href is string => href !== null)
+
+            return [...imagePaths, ...styleSheetPaths]
+        })
+    )
+
+    for (const path of resourcePaths) {
+        const response = await fetch(path)
+        const blob = await response.blob()
+        const fileParts = path.split("/") 
+        const fileName = fileParts.pop()!
+        const filePath = fileParts.join("/")
+        zip.folder('OEBPS/' + filePath)?.file(fileName, blob)
     }
+
+
+    mainContent.forEach(([title, content]) => {
+        zip.folder('OEBPS')?.file(title, content)
+    })
+
+
+    // Get toc files
+    const tocNcxTitle = "toc.ncx"
+    const tocXhtmlTitle = "toc.xhtml"
+    zip.folder('OEBPS')?.file(tocNcxTitle, await fetchContent(`${baseUrl}/${tocNcxTitle}`))
+    zip.folder('OEBPS')?.file(tocXhtmlTitle, await fetchContent(`${baseUrl}/${tocXhtmlTitle}`))
+
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
+    // Format data
+    const url = URL.createObjectURL(blob);
+    const fileName = `${json.b.title.main}.epub`
+
+    // Download by utilizing a temporary hyperlink tag
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click(); // Trigger the download
+    // const iframesContent = await Promise.all(iframeUrls.map(url => loadIFrameContent(mainContainer, url)))
+    // console.log(iframeUrls)
+    // console.log(iframesContent)
+
+    // const domParser = new DOMParser() 
+    // const parsedContent = mainContent.map(([_, content]) => domParser.parseFromString(content, 'text/html'))
+
+    /*
+    for (let index = 0; index < parsedContent.length; index++) {
+        const element = parsedContent[index];
+        element.querySelectorAll('img').forEach(img => {
+            const src = img.getAttribute('src')
+            if (src == null) { return }
+            paths.add(src)
+        })
+    }
+
+    console.log(paths)
+    */
+
+    const CSSUrl = baseUrl + "/css/idGeneratedStyles.css"
+    const responseCSS = await fetch(CSSUrl);
+    const textCSS = await responseCSS.text();
+    // console.log(CSSUrl)
+    // console.log(textCSS)
+
+    const contentUrl = baseUrl + "/content.opf"
+    const responseContent = await fetch(contentUrl);
+    const textContent = await responseContent.text();
+    // console.log(CSSUrl)
+    // console.log(textContent)
 
     // const response_2 = await fetch(currentUrl);
 })();
+
+async function fetchContent(url: string) {
+    const response = await fetch(url);
+    return await response.text();
+}
+
+function loadIFrameContent(div: HTMLDivElement, baseUrl: string, path: string, params: string) {
+    return new Promise<[string, string]>((resolve, reject) => {
+        const iframe = document.createElement('iframe');
+        iframe.src = `${baseUrl}/${path}?${params}`;
+        iframe.onload = () => {
+            let content = iframe.contentDocument?.documentElement.innerHTML;
+            if (!content) {
+                reject(new Error(`Failed to read content of iframe with path: ${path}`));
+                return;
+            }
+
+            resolve([path, content]);
+        }
+        iframe.onerror = () => reject(new Error(`Failed to load iframe with path: ${path}`));
+        div.appendChild(iframe)
+    })
+}
 
 function shiftTextByKey(text: string, key: string) {
     const ASCII_RANGE = { min: 32, max: 126 }
