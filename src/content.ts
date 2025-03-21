@@ -1,4 +1,4 @@
-import JSZip from "jszip";
+import JSZip, { JSZipObject } from "jszip";
 
 (async () => {
     const currentUrl = window.location.href;
@@ -69,8 +69,6 @@ import JSZip from "jszip";
 
 
     // Get all CSS resource paths (such as fonts)
-
-
     const resourcePaths = new Set(
         mainContent.flatMap(([, content]) => {
             const doc = domParser.parseFromString(content, 'text/html')
@@ -87,15 +85,32 @@ import JSZip from "jszip";
         })
     )
 
-    for (const path of resourcePaths) {
-        const response = await fetch(path)
-        const blob = await response.blob()
-        const fileParts = path.split("/") 
-        const fileName = fileParts.pop()!
-        const filePath = fileParts.join("/")
-        zip.folder('OEBPS/' + filePath)?.file(fileName, blob)
+    await fetchToZip(zip, resourcePaths, 'OEBPS')
+
+    let cssFiles: JSZipObject[] = []
+    zip.forEach((relativePath, file) => {
+        if (!relativePath.endsWith('.css')) {
+            return
+        }
+        cssFiles.push(file)
+    })
+
+    const cssUrlRegex = /url\(\s*['"]?([^'")]+)['"]?\s*\)/g
+    const cssResourcePaths = new Set<string>()
+
+    for (const cssFile of cssFiles) {
+        const cssContent = await cssFile.async('string')
+        let match;
+        while ((match = cssUrlRegex.exec(cssContent)) !== null) {
+            // TODO: Find smarter way to dynamically correct url - rather than just removing "../"
+            const path = match[1].replace(/^(\.\.\/)/, '')
+            cssResourcePaths.add(path)
+        }
     }
 
+    console.log(cssResourcePaths)
+
+    await fetchToZip(zip, cssResourcePaths, 'OEBPS')
 
     mainContent.forEach(([title, content]) => {
         zip.folder('OEBPS')?.file(title, content)
@@ -138,16 +153,6 @@ import JSZip from "jszip";
 
     console.log(paths)
     */
-
-    const CSSUrl = baseUrl + "/css/idGeneratedStyles.css"
-    const responseCSS = await fetch(CSSUrl);
-    const textCSS = await responseCSS.text();
-    // console.log(CSSUrl)
-    // console.log(textCSS)
-
-    const contentUrl = baseUrl + "/content.opf"
-    const responseContent = await fetch(contentUrl);
-    const textContent = await responseContent.text();
     // console.log(CSSUrl)
     // console.log(textContent)
 
@@ -157,6 +162,16 @@ import JSZip from "jszip";
 async function fetchContent(url: string) {
     const response = await fetch(url);
     return await response.text();
+}
+
+async function fetchToZip(zip: JSZip, resourcePaths: Set<string>, baseDirectory: string = "") {
+    console.log(resourcePaths)
+    for (const path of resourcePaths) {
+        const response = await fetch(path);
+        const blob = await response.blob();
+        console.log(path)
+        zip.file(`${baseDirectory}/${path}`, blob);
+    }
 }
 
 function loadIFrameContent(div: HTMLDivElement, baseUrl: string, path: string, params: string) {
