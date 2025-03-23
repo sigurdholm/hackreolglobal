@@ -34,12 +34,15 @@ import JSZip, { JSZipObject } from "jszip";
     const zip = new JSZip()
 
     const mainContainer = document.createElement('div');
+    mainContainer.style.visibility = 'hidden'
     document.body.appendChild(mainContainer);
 
     // Get main content as [title, content] (needs to be inserted as iframes into main container and load)
     const mainContent = await Promise.all(spine.map((entry, index) =>
         loadIFrameContent(mainContainer, baseUrl, entry.path, cmptParams[index])
     ))
+
+    document.body.removeChild(mainContainer)
 
     const domParser = new DOMParser()
 
@@ -65,8 +68,6 @@ import JSZip, { JSZipObject } from "jszip";
             }
         })
     })
-
-
 
     // Get all CSS resource paths (such as fonts)
     const resourcePaths = new Set(
@@ -116,7 +117,6 @@ import JSZip, { JSZipObject } from "jszip";
         zip.folder('OEBPS')?.file(title, content)
     })
 
-
     // Get toc files
     const tocNcxTitle = "toc.ncx"
     const tocXhtmlTitle = "toc.xhtml"
@@ -133,30 +133,7 @@ import JSZip, { JSZipObject } from "jszip";
     a.href = url;
     a.download = fileName;
     document.body.appendChild(a);
-    a.click(); // Trigger the download
-    // const iframesContent = await Promise.all(iframeUrls.map(url => loadIFrameContent(mainContainer, url)))
-    // console.log(iframeUrls)
-    // console.log(iframesContent)
-
-    // const domParser = new DOMParser() 
-    // const parsedContent = mainContent.map(([_, content]) => domParser.parseFromString(content, 'text/html'))
-
-    /*
-    for (let index = 0; index < parsedContent.length; index++) {
-        const element = parsedContent[index];
-        element.querySelectorAll('img').forEach(img => {
-            const src = img.getAttribute('src')
-            if (src == null) { return }
-            paths.add(src)
-        })
-    }
-
-    console.log(paths)
-    */
-    // console.log(CSSUrl)
-    // console.log(textContent)
-
-    // const response_2 = await fetch(currentUrl);
+    a.click();
 })();
 
 async function fetchContent(url: string) {
